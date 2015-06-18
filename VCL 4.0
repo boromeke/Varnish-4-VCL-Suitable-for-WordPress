@@ -1,0 +1,71 @@
+#
+# This is an example VCL file for Varnish.
+#
+# It does not do anything by default, delegating control to the
+# builtin VCL. The builtin VCL is called when there is no explicit
+# return statement.
+#
+# See the VCL chapters in the Users Guide at https://www.varnish-cache.org/docs/
+# and http://varnish-cache.org/trac/wiki/VCLExamples for more examples.
+
+# Marker to tell the VCL compiler that this VCL has been adapted to the
+# new 4.0 format.
+vcl 4.0;
+
+# Default backend definition. Set this to point to your content server.
+backend default {
+    .host = "127.0.0.1";
+    .port = "8080";
+}
+
+sub vcl_recv {
+  if (req.http.Accept-Encoding) {
+#revisit this list
+    if (req.url ~ "\.(gif|jpg|jpeg|swf|flv|mp3|mp4|pdf|ico|png|gz|tgz|bz2)(\?.*|)$") {
+      unset req.http.Accept-Encoding;
+    } elsif (req.http.Accept-Encoding ~ "gzip") {
+      set req.http.Accept-Encoding = "gzip";
+    } elsif (req.http.Accept-Encoding ~ "deflate") {
+      set req.http.Accept-Encoding = "deflate";
+    } else {
+      unset req.http.Accept-Encoding;
+    }
+  }
+  if (req.url ~ "\.(gif|jpg|jpeg|swf|css|js|flv|mp3|mp4|pdf|ico|png)(\?.*|)$") {
+    unset req.http.cookie;
+    set req.url = regsub(req.url, "\?.*$", "");
+  }
+  if (req.url ~ "\?(utm_(campaign|medium|source|term)|adParams|client|cx|eid|fbid|feed|ref(id|src)?|v(er|iew))=") {
+    set req.url = regsub(req.url, "\?.*$", "");
+  }
+  if (req.http.cookie) {
+    if (req.http.cookie ~ "(wordpress_|wp-settings-)") {
+      return(pass);
+    } else {
+      unset req.http.cookie;
+    }
+  }
+}
+
+sub vcl_backend_response {
+        if (bereq.url ~ "wp-(login|admin)" || bereq.url ~ "preview=true" || bereq.url ~ "xmlrpc.php") {
+          return (deliver);
+        }
+        if ( (!(bereq.url ~ "(wp-(login|admin)|login)")) || (bereq.method == "GET") ) {
+        unset beresp.http.set-cookie;
+    }
+       if (bereq.url ~ "\.(gif|jpg|jpeg|swf|css|js|flv|mp3|mp4|pdf|ico|png)(\?.*|)$") {
+       set beresp.ttl = 365d;
+    }
+}
+
+sub vcl_deliver {
+# multi-server webfarm? set a variable here so you can check
+# the headers to see which frontend served the request
+#   set resp.http.X-Server = "server-01";
+   if (obj.hits > 0) {
+     set resp.http.X-Cache = "HIT";
+   } else {
+     set resp.http.X-Cache = "MISS";
+   }
+}
